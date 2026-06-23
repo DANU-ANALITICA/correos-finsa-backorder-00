@@ -1,51 +1,50 @@
 # main.py
-import asyncio
-import io
+
+## librerías
+
 import os
-import re
 import smtplib
-import time
-import unicodedata
-import zipfile
+
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from pathlib import Path
 
 from dotenv import load_dotenv
 
-
-import numpy as np
 import pandas as pd
+import re
 from google.cloud import bigquery
-from playwright.async_api import async_playwright
 
-#----ESTO SALE DEL .env
+## Extrae variables del .env
 load_dotenv()
 PROJECT_ID = os.environ["GCP_PROJECT"]
 EMISOR = os.environ.get("EMISOR", "")
 PASSWORD = os.environ.get("PASSWORD", "")
-###RECEPTOR = os.environ.get("RECEPTOR", "")
 
-client = bigquery.Client(project=PROJECT_ID)
-# query = '''SELECT DISTINCT Proveedor, Nombre,
-# COALESCE(
-#   NULLIF(Email1, ''),
-#   NULLIF(Email2, ''),
-#   NULLIF(Email3, '')
-# ) AS Email FROM `finsadashboard.raw_data.Proveedores`
-# WHERE COALESCE(
-#   NULLIF(Email1, ''),
-#   NULLIF(Email2, ''),
-#   NULLIF(Email3, '')
-# )  is not NULL'''
+##  En GCP se usa client = bigquery.Client(project=PROJECT_ID)
+client = bigquery.Client(project=os.environ["GCP_PROJECT"])
 
 query = '''SELECT DISTINCT Proveedor, Nombre,
-'daniel.perez@danuanalitica.com' AS Email 
-FROM `finsadashboard.raw_data.Proveedores` LIMIT 3
-'''
+COALESCE(
+  NULLIF(Email1, ''),
+  NULLIF(Email2, ''),
+  NULLIF(Email3, '')
+) AS Email FROM `finsadashboard.raw_data.Proveedores`
+WHERE COALESCE(
+  NULLIF(Email1, ''),
+  NULLIF(Email2, ''),
+  NULLIF(Email3, '')
+)  is not NULL'''
+
+## Query de prueba para envío a destinatario fijo
+# query = '''SELECT DISTINCT Proveedor, Nombre,
+# 'daniel.perez@danuanalitica.com' AS Email 
+# FROM `finsadashboard.raw_data.Proveedores` LIMIT 3
+# '''
 
 correos = client.query(query).to_dataframe()
 correos
+
+#FALTA VALIDAR CORREOS CON REGEX
 
 # ─── BIGQUERY ─────────────────────────────────────────────────────────────────
 def get_backorder_mty(provider_name: str ) -> pd.DataFrame:
@@ -159,6 +158,8 @@ def send_email_backorder(df: pd.DataFrame, Proveedor: str):
         print("✅ Correo enviado")
     except Exception as e:
         print("❌ Error al enviar el correo:", e)
+
+## PROVEEDOR X PROVEEDOR
 
 if __name__ == "__main__":
     try:
