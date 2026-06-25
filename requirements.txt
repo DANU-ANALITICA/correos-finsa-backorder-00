@@ -1,4 +1,6 @@
-numpy
-pandas
-python-dotenv
-google-cloud-bigquery
+email_validator==2.3.0
+numpy==2.5.0
+pandas==3.0.3
+protobuf==7.35.1
+python-dotenv==1.2.2
+google-cloud-bigquery==7.34.0
