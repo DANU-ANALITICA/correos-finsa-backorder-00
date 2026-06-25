@@ -7,6 +7,7 @@ import smtplib
 
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 
 from dotenv import load_dotenv
 
@@ -14,20 +15,28 @@ import pandas as pd
 import re
 import numpy as np
 import ast
+import openpyxl
 from google.cloud import bigquery
 from email_validator import validate_email, EmailNotValidError
+
+EJECUTION_MODE = "PRUEBA"
 
 ## Extrae variables del .env
 load_dotenv()
 PROJECT_ID = os.environ["GCP_PROJECT"]
-# EMISOR = os.environ.get("EMISOR", "")
-# PASSWORD = os.environ.get("PASSWORD", "")
 BUYERS_PASSWORD = os.environ.get("BUYERS_PASSWORD", "")
 BUYERS_PASSWORD = ast.literal_eval(BUYERS_PASSWORD)
 buyer_passwords = pd.DataFrame(list(BUYERS_PASSWORD.items()), columns=['Usuario_ID', 'Password'])
+GOOGLE_CREDENTIALS = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
 
-##  En GCP se usa client = bigquery.Client(project=PROJECT_ID)
-client = bigquery.Client(project=os.environ["GCP_PROJECT"])
+client = bigquery.Client(project=PROJECT_ID)
+
+DATASET_Y_TABLA = "mrts.mrts_historico_correos_backorder"  
+TABLA_COMPLETA_ID = f"{PROJECT_ID}.{DATASET_Y_TABLA}"
+
+job_config = bigquery.LoadJobConfig(
+    write_disposition="WRITE_APPEND" 
+)
 
 # # query = '''SELECT DISTINCT Proveedor, Nombre,
 # # COALESCE(
@@ -47,7 +56,7 @@ client = bigquery.Client(project=os.environ["GCP_PROJECT"])
 
 # Query de prueba para envío a destinatario fijo
 query = '''SELECT DISTINCT Proveedor, Nombre,
-'leonardo.laureles@danuanalitica.com' AS Email 
+'keyla.islas@danuanalitica.com' AS Email 
 --CASE WHEN Proveedor = 10096 THEN 'fmartinez@finsa.com.mx' ELSE 'ruben.garza@finsa.com.mx' END AS Email
 FROM `finsadashboard.raw_data.Proveedores` 
 --LIMIT 3
@@ -193,11 +202,18 @@ def send_email_backorder(df: pd.DataFrame, Email_proveedor: str, Email_comprador
     </html>
     """
 
+    excel_file = f"Backorder_{Sucursal}.xlsx"
+    df.to_excel(excel_file, index=False)
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = f"Reporte de Backorder - {Sucursal}"
     msg["From"]    = Email_comprador
     msg["To"]      = Email_proveedor #", ".join([r.strip() for r in RECEPTOR.split(",")])
     msg.attach(MIMEText(html, "html"))
+    with open(excel_file, "rb") as f:
+        part = MIMEApplication(f.read(), Name=excel_file)
+    part['Content-Disposition'] = f'attachment; filename={excel_file}'
+    msg.attach(part)
 
     if not Email_comprador or not Password:
         print("⚠️ Advertencia: Email_comprador o Password no están configurados en el archivo .env. No se puede enviar el correo.")
@@ -208,8 +224,28 @@ def send_email_backorder(df: pd.DataFrame, Email_proveedor: str, Email_comprador
             smtp.login(Email_comprador, Password)
             smtp.send_message(msg)
         print("✅ Correo enviado")
+
+        if EJECUTION_MODE != "PRUEBA":
+
+            try:
+                print(f"Subiendo datos a {TABLA_COMPLETA_ID}...")
+                df = df.copy()
+                df['FECHA_ENVIO'] = pd.Timestamp.now()
+                df['Email_proveedor'] = Email_proveedor
+                df['Email_comprador'] = Email_comprador
+                df['Comprador'] = Comprador
+                df['Sucursal'] = Sucursal
+                job = client.load_table_from_dataframe(df, TABLA_COMPLETA_ID, job_config=job_config)
+                job.result()
+                    
+                print(f"¡Tabla subida exitosamente! Se cargaron {job.output_rows} filas.")
+
+            except Exception as e:
+                print(f"Error al subir los datos a BigQuery: {e}")
+        
     except Exception as e:
         print("❌ Error al enviar el correo:", e)
+        
 
 ## PROVEEDOR X PROVEEDOR
 
@@ -229,7 +265,6 @@ if __name__ == "__main__":
         
         print("\nEnviando reporte por correo...")
         send_email_backorder(df, row.Email, row.Email_COMPRADOR, row.NOMBRE_COMPRADOR, row.NOMBRE_SUCURSAL, row.Password)
-        
-        (df, row.Email)
+
     except Exception as e:
         print("Ocurrió un error al consultar BigQuery:", e)
