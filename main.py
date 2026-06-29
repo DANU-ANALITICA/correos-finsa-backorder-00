@@ -19,6 +19,10 @@ import openpyxl
 from google.cloud import bigquery
 from email_validator import validate_email, EmailNotValidError
 
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
+from openpyxl.utils import get_column_letter
+
+
 EJECUTION_MODE = "PRUEBA"
 
 ## Extrae variables del .env
@@ -138,11 +142,11 @@ def get_backorder(provider_name: str, branch_name: str, buyer_name: str, df: pd.
             (df['NOMBRE_SUCURSAL'] == branch_name) &
             (df['NOMBRE_COMPRADOR'] == buyer_name)]
     df = df[['FECHA_ALTA','ORDEN_COMPRA','PEDIDO','ARTICULO','DESCRIPCION','EDP','PARTIDA','CANTIDAD','CANTIDAD_RECIBIDA','BACKORDER','UNIDAD','FECHA_EMBARQUE','DIAS_RETRASO_EMBARQUE']]
-
+    df.columns = ['FECHA ALTA','ORDEN DE COMPRA','PEDIDO','ARTICULO','DESCRIPCIÓN','EDP','PARTIDA','CANTIDAD','CANTIDAD RECIBIDA','BACKORDER','UNIDAD','FECHA DE EMBARQUE','DIAS DE RETRASOEMBARQUE']
     return df
 
 # ─── CORREO ───────────────────────────────────────────────────────────────────
-def send_email_backorder(df: pd.DataFrame, Email_proveedor: str, Email_comprador: str, Comprador: str,  Sucursal: str, Password: str) -> None:
+def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str, Email_comprador: str, Comprador: str,  Sucursal: str, Password: str) -> None:
     """
     Sends the backorder DataFrame as a styled HTML table via email.
     """
@@ -191,7 +195,7 @@ def send_email_backorder(df: pd.DataFrame, Email_proveedor: str, Email_comprador
     </head>
     <body>
     <p>Buen día,</p>
-    <p>Te comparto el reporte de backorder de la sucursal {Sucursal} para su revisión.</p>
+    <p>Te comparto el reporte de backorder para su revisión.</p>
     <h2>Reporte de Backorder - {Sucursal}</h2>
     {df.to_html(index=False)}
     <br>
@@ -202,11 +206,25 @@ def send_email_backorder(df: pd.DataFrame, Email_proveedor: str, Email_comprador
     </html>
     """
 
-    excel_file = f"Backorder_{Sucursal}.xlsx"
-    df.to_excel(excel_file, index=False)
+    excel_file = f"Backorder_{Proveedor}_{Sucursal}.xlsx"
+
+    with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Datos')
+        
+        ws = writer.sheets['Datos']
+        
+        header_fill = PatternFill("solid", fgColor="4472C4")
+        for cell in ws[1]:  # fila 1 = encabezados
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center')
+        
+        for col in ws.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            ws.column_dimensions[get_column_letter(col[0].column)].width = max_len + 4
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"Reporte de Backorder - {Sucursal}"
+    msg["Subject"] = f"Reporte de Backorder - {Proveedor}"
     msg["From"]    = Email_comprador
     msg["To"]      = Email_proveedor #", ".join([r.strip() for r in RECEPTOR.split(",")])
     msg.attach(MIMEText(html, "html"))
@@ -264,7 +282,7 @@ if __name__ == "__main__":
         print(df)
         
         print("\nEnviando reporte por correo...")
-        send_email_backorder(df, row.Email, row.Email_COMPRADOR, row.NOMBRE_COMPRADOR, row.NOMBRE_SUCURSAL, row.Password)
+        send_email_backorder(df, row.NOMBRE_PROVEEDOR, row.Email, row.Email_COMPRADOR, row.NOMBRE_COMPRADOR, row.NOMBRE_SUCURSAL, row.Password)
 
     except Exception as e:
         print("Ocurrió un error al consultar BigQuery:", e)
