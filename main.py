@@ -60,7 +60,7 @@ job_config = bigquery.LoadJobConfig(
 
 # Query de prueba para envío a destinatario fijo
 query = '''SELECT DISTINCT Proveedor, Nombre,
-'keyla.islas@danuanalitica.com' AS Email 
+'leonardo.laureles@danuanalitica.com' AS Email 
 --CASE WHEN Proveedor = 10096 THEN 'fmartinez@finsa.com.mx' ELSE 'ruben.garza@finsa.com.mx' END AS Email
 FROM `finsadashboard.raw_data.Proveedores` 
 --LIMIT 3

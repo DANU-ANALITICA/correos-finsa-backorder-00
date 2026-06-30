@@ -47,10 +47,9 @@ pip install -r requirements.txt
 Crear un archivo `.env`:
 
 ```env
-EMISOR = "correo_emisor"
-PASSWORD = "contraseña_de_aplicacion_Google"
 GCP_PROJECT = "project_id"
-GOOGLE_APPLICATION_CREDENTIALS = "/Ruta/a/Archivo/Json/credencials.json" #solo si corres local
+GOOGLE_APPLICATION_CREDENTIALS = "/Ruta/a/Archivo/Json/credencials.json"  #solo si corres local
+BUYERS_PASSWORD='{ id_buyer_int : "app_password"}'
 ```
 
 ## Ejecución
