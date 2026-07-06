@@ -23,7 +23,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
 from openpyxl.utils import get_column_letter
 
 
-EJECUTION_MODE = "PRUEBA"
+EJECUTION_MODE = ""
 
 ## Extrae variables del .env
 load_dotenv()
@@ -35,7 +35,7 @@ GOOGLE_CREDENTIALS = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
 
 client = bigquery.Client(project=PROJECT_ID)
 
-DATASET_Y_TABLA = "mrts.mrts_historico_correos_backorder"  
+DATASET_Y_TABLA = "raw_data.historico_correos_backorder"  
 TABLA_COMPLETA_ID = f"{PROJECT_ID}.{DATASET_Y_TABLA}"
 
 job_config = bigquery.LoadJobConfig(
@@ -60,11 +60,17 @@ job_config = bigquery.LoadJobConfig(
 
 # Query de prueba para envío a destinatario fijo
 query = '''SELECT DISTINCT Proveedor, Nombre,
-'leonardo.laureles@danuanalitica.com' AS Email 
+--'leonardo.laureles@danuanalitica.com' AS Email 
 --CASE WHEN Proveedor = 10096 THEN 'fmartinez@finsa.com.mx' ELSE 'ruben.garza@finsa.com.mx' END AS Email
+    CASE 
+        WHEN Proveedor = 95 THEN 'ruben.garza@finsa.com.mx'
+        WHEN Proveedor = 3 THEN 'fmartinez@finsa.com.mx'
+        WHEN Proveedor = 56 THEN 'keyla.islas@danuanalitica.com'
+        ELSE 'lucia.balli@danuanalitica.com' 
+    END AS Email
 FROM `finsadashboard.raw_data.Proveedores` 
 --LIMIT 3
-WHERE Proveedor IN (10096,10099)
+WHERE Proveedor IN (95,3,56,49)
 '''
 
 correos = client.query(query).to_dataframe()
@@ -85,6 +91,7 @@ query = """
             FECHA_EMBARQUE,
             DIAS_RETRASO_EMBARQUE,
             NOMBRE_SUCURSAL,
+            NOMBRE_ALMACEN,
             NOMBRE_COMPRADOR,
             NOMBRE_PROVEEDOR,
             PROVEEDOR,
@@ -94,17 +101,17 @@ query = """
         FROM `finsadashboard.mrts.mrts_backorder_MTY`
         WHERE BACKORDER > 0 
           AND DIAS_RETRASO_EMBARQUE > 0
-          AND  PROVEEDOR IN (10096,10099)
+          AND  PROVEEDOR IN  (95,3,56,49)
         ORDER BY NOMBRE_PROVEEDOR, FECHA_ALTA
     """
 
 backorder = client.query(query).to_dataframe()
 
 
-loop_values = backorder[['NOMBRE_COMPRADOR','NOMBRE_PROVEEDOR', 'NOMBRE_SUCURSAL', 'NOMBRE_COMPRADOR', 'PROVEEDOR', 'COMPRADOR', 'SUCURSAL', 'Email_COMPRADOR']].drop_duplicates()
+loop_values = backorder[['NOMBRE_COMPRADOR','NOMBRE_PROVEEDOR', 'NOMBRE_SUCURSAL', 'NOMBRE_ALMACEN', 'NOMBRE_COMPRADOR', 'PROVEEDOR', 'COMPRADOR', 'SUCURSAL', 'Email_COMPRADOR']].drop_duplicates()
 loop_values = loop_values.merge(correos, left_on='PROVEEDOR', right_on='Proveedor', how='left')
 loop_values = loop_values.merge(buyer_passwords, left_on='COMPRADOR', right_on='Usuario_ID', how='left')
-loop_values = loop_values[['NOMBRE_PROVEEDOR','NOMBRE_COMPRADOR', 'NOMBRE_SUCURSAL', 'Email_COMPRADOR', 'Email', 'Password']]
+loop_values = loop_values[['NOMBRE_PROVEEDOR','NOMBRE_COMPRADOR', 'NOMBRE_SUCURSAL', 'NOMBRE_ALMACEN','Email_COMPRADOR', 'Email', 'Password']]
 
 
 # ─── DEF CORREOS_CLEAN ─────────────────────────────────────────────────────────────────
@@ -146,7 +153,7 @@ def get_backorder(provider_name: str, branch_name: str, buyer_name: str, df: pd.
     return df
 
 # ─── CORREO ───────────────────────────────────────────────────────────────────
-def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str, Email_comprador: str, Comprador: str,  Sucursal: str, Password: str) -> None:
+def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str, Email_comprador: str, Comprador: str,  Sucursal: str, Password: str, Almacen: str) -> None:
     """
     Sends the backorder DataFrame as a styled HTML table via email.
     """
@@ -208,8 +215,11 @@ def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str
 
     excel_file = f"Backorder_{Proveedor}_{Sucursal}.xlsx"
 
+    df1 = df.copy()
+    df1['NUEVA FECHA COMPROMISO'] = ""
+
     with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Datos')
+        df1.to_excel(writer, index=False, sheet_name='Datos')
         
         ws = writer.sheets['Datos']
         
@@ -253,6 +263,8 @@ def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str
                 df['Email_comprador'] = Email_comprador
                 df['Comprador'] = Comprador
                 df['Sucursal'] = Sucursal
+                df['Proveedor'] = Proveedor
+                df['Almacen'] = Almacen   
                 job = client.load_table_from_dataframe(df, TABLA_COMPLETA_ID, job_config=job_config)
                 job.result()
                     
@@ -282,7 +294,7 @@ if __name__ == "__main__":
         print(df)
         
         print("\nEnviando reporte por correo...")
-        send_email_backorder(df, row.NOMBRE_PROVEEDOR, row.Email, row.Email_COMPRADOR, row.NOMBRE_COMPRADOR, row.NOMBRE_SUCURSAL, row.Password)
+        send_email_backorder(df, row.NOMBRE_PROVEEDOR, row.Email, row.Email_COMPRADOR, row.NOMBRE_COMPRADOR, row.NOMBRE_SUCURSAL, row.Password, row.NOMBRE_ALMACEN)
 
     except Exception as e:
         print("Ocurrió un error al consultar BigQuery:", e)
