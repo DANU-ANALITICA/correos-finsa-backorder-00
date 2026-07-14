@@ -4,11 +4,14 @@
 
 import os
 import smtplib
-
+from email.message import EmailMessage
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
-
+from email.mime.base import MIMEBase
+from email import encoders
+import imaplib
+import time 
 from dotenv import load_dotenv
 
 import pandas as pd
@@ -70,7 +73,7 @@ query = '''SELECT DISTINCT Proveedor, Nombre,
     END AS Email
 FROM `finsadashboard.raw_data.Proveedores` 
 --LIMIT 3
-WHERE Proveedor IN (95,3,56,49)
+WHERE Proveedor IN (95,3,56)
 '''
 
 correos = client.query(query).to_dataframe()
@@ -96,12 +99,12 @@ query = """
             NOMBRE_PROVEEDOR,
             PROVEEDOR,
             1 AS COMPRADOR,
-            "keyla.islas@danuanalitica.com" AS Email_COMPRADOR,
+            "pruebas@finsa.com.mx" AS Email_COMPRADOR,
             SUCURSAL, PEDIDO
         FROM `finsadashboard.mrts.mrts_backorder_MTY`
         WHERE BACKORDER > 0 
           AND DIAS_RETRASO_EMBARQUE > 0
-          AND  PROVEEDOR IN  (95,3,56,49)
+          AND  PROVEEDOR IN  (95,3,56)
         ORDER BY NOMBRE_PROVEEDOR, FECHA_ALTA
     """
 
@@ -151,6 +154,13 @@ def get_backorder(provider_name: str, branch_name: str, buyer_name: str, df: pd.
     df = df[['FECHA_ALTA','ORDEN_COMPRA','PEDIDO','ARTICULO','DESCRIPCION','EDP','PARTIDA','CANTIDAD','CANTIDAD_RECIBIDA','BACKORDER','UNIDAD','FECHA_EMBARQUE','DIAS_RETRASO_EMBARQUE']]
     df.columns = ['FECHA ALTA','ORDEN DE COMPRA','PEDIDO','ARTICULO','DESCRIPCIÓN','EDP','PARTIDA','CANTIDAD','CANTIDAD RECIBIDA','BACKORDER','UNIDAD','FECHA DE EMBARQUE','DIAS DE RETRASOEMBARQUE']
     return df
+
+def limpiar_cadena(cadena: str) -> str:
+    if pd.isna(cadena):
+        return ""
+    # Eliminar caracteres especiales y acentos
+    cadena = re.sub(r'[^a-zA-Z0-9]', '', cadena)
+    return cadena.strip()
 
 # ─── CORREO ───────────────────────────────────────────────────────────────────
 def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str, Email_comprador: str, Comprador: str,  Sucursal: str, Password: str, Almacen: str) -> None:
@@ -213,7 +223,10 @@ def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str
     </html>
     """
 
-    excel_file = f"Backorder_{Proveedor}_{Sucursal}.xlsx"
+    prov = limpiar_cadena(Proveedor)
+    suc = limpiar_cadena(Sucursal)
+
+    excel_file = f"Backorder_{prov}_{suc}.xlsx"
 
     df1 = df.copy()
     df1['NUEVA FECHA COMPROMISO'] = ""
@@ -233,48 +246,92 @@ def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str
             max_len = max(len(str(cell.value or '')) for cell in col)
             ws.column_dimensions[get_column_letter(col[0].column)].width = max_len + 4
 
-    msg = MIMEMultipart("alternative")
+    msg = MIMEMultipart("mixed") #alternative
     msg["Subject"] = f"Reporte de Backorder - {Proveedor}"
     msg["From"]    = Email_comprador
     msg["To"]      = Email_proveedor #", ".join([r.strip() for r in RECEPTOR.split(",")])
+    msg['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Python-SMTPLIB"
+    msg['X-Mailer'] = "Python-SMTP-Client"
     msg.attach(MIMEText(html, "html"))
-    with open(excel_file, "rb") as f:
-        part = MIMEApplication(f.read(), Name=excel_file)
-    part['Content-Disposition'] = f'attachment; filename={excel_file}'
-    msg.attach(part)
+    # with open(excel_file, "rb") as f:
+    #     part = MIMEApplication(f.read(), Name=excel_file)
+    # part['Content-Disposition'] = f'attachment; filename={excel_file}'
+    # msg.attach(part)
+
+
+
+    try:
+        with open(excel_file, "rb") as f:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(f.read())
+        
+        encoders.encode_base64(part)
+        
+        part.add_header(
+            "Content-Disposition",
+            f"attachment; filename={excel_file}"
+        )
+        msg.attach(part)
+        print("📦 Archivo Excel empaquetado correctamente")
+
+    except FileNotFoundError:
+        print(f"❌ Error: No se encontró el archivo {excel_file}")
+        return
+
+
+
+
 
     if not Email_comprador or not Password:
         print("⚠️ Advertencia: Email_comprador o Password no están configurados en el archivo .env. No se puede enviar el correo.")
         return
+    
+    HOST =  "finsa--com--mx.criticalmail.net" #"smtp.gmail.com" #
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+        with smtplib.SMTP_SSL(HOST, 465, timeout=30) as smtp:
+            time.sleep(1)
             smtp.login(Email_comprador, Password)
             smtp.send_message(msg)
-        print("✅ Correo enviado")
+            print("✅ Correo enviado")
 
-        if EJECUTION_MODE != "PRUEBA":
+            if EJECUTION_MODE != "PRUEBA":
 
-            try:
-                print(f"Subiendo datos a {TABLA_COMPLETA_ID}...")
-                df = df.copy()
-                df['FECHA_ENVIO'] = pd.Timestamp.now()
-                df['Email_proveedor'] = Email_proveedor
-                df['Email_comprador'] = Email_comprador
-                df['Comprador'] = Comprador
-                df['Sucursal'] = Sucursal
-                df['Proveedor'] = Proveedor
-                df['Almacen'] = Almacen   
-                job = client.load_table_from_dataframe(df, TABLA_COMPLETA_ID, job_config=job_config)
-                job.result()
-                    
-                print(f"¡Tabla subida exitosamente! Se cargaron {job.output_rows} filas.")
+                try:
+                    print(f"Subiendo datos a {TABLA_COMPLETA_ID}...")
+                    df = df.copy()
+                    df['FECHA_ENVIO'] = pd.Timestamp.now()
+                    df['Email_proveedor'] = Email_proveedor
+                    df['Email_comprador'] = Email_comprador
+                    df['Comprador'] = Comprador
+                    df['Sucursal'] = Sucursal
+                    df['Proveedor'] = Proveedor
+                    df['Almacen'] = Almacen   
+                    job = client.load_table_from_dataframe(df, TABLA_COMPLETA_ID, job_config=job_config)
+                    job.result()
+                        
+                    print(f"¡Tabla subida exitosamente! Se cargaron {job.output_rows} filas.")
 
-            except Exception as e:
-                print(f"Error al subir los datos a BigQuery: {e}")
+                except Exception as e:
+                    print(f"Error al subir los datos a BigQuery: {e}")
         
     except Exception as e:
         print("❌ Error al enviar el correo:", e)
+
+    try:
+        with imaplib.IMAP4_SSL(HOST, 993, timeout=30) as imap:
+            imap.login(Email_comprador, Password)
+            carpeta_enviados = "Sent" 
+            
+            imap.append(
+                carpeta_enviados, 
+                r'\Seen', 
+                imaplib.Time2Internaldate(time.time()), 
+                msg.as_bytes()
+            )
+            print("Copia guardada con éxito en la carpeta de Enviados (IMAP).")
+    except Exception as e:
+        print(f"No se pudo guardar la copia en Enviados: {e}")
         
 
 ## PROVEEDOR X PROVEEDOR
