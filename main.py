@@ -56,7 +56,7 @@ job_config = bigquery.LoadJobConfig(
 # #   NULLIF(Email1, ''),
 # #   NULLIF(Email2, ''),
 # #   NULLIF(Email3, '')
-# # ) LIKE '%@%' 
+# # ) LIKE '%@%'  AND Proveedor IN (95)
 
 # # --LIMIT 100
 # # '''
@@ -66,14 +66,14 @@ query = '''SELECT DISTINCT Proveedor, Nombre,
 --'leonardo.laureles@danuanalitica.com' AS Email 
 --CASE WHEN Proveedor = 10096 THEN 'fmartinez@finsa.com.mx' ELSE 'ruben.garza@finsa.com.mx' END AS Email
     CASE 
-        WHEN Proveedor = 95 THEN 'ruben.garza@finsa.com.mx'
+        WHEN Proveedor = 95 THEN 'keyla.islas@danuanalitica.com'
         WHEN Proveedor = 3 THEN 'fmartinez@finsa.com.mx'
         WHEN Proveedor = 56 THEN 'keyla.islas@danuanalitica.com'
         ELSE 'lucia.balli@danuanalitica.com' 
     END AS Email
 FROM `finsadashboard.raw_data.Proveedores` 
 --LIMIT 3
-WHERE Proveedor IN (95,3,56)
+WHERE Proveedor IN (95)
 '''
 
 correos = client.query(query).to_dataframe()
@@ -104,7 +104,7 @@ query = """
         FROM `finsadashboard.mrts.mrts_backorder_MTY`
         WHERE BACKORDER > 0 
           AND DIAS_RETRASO_EMBARQUE > 0
-          AND  PROVEEDOR IN  (95,3,56)
+          AND  PROVEEDOR IN  (95)
         ORDER BY NOMBRE_PROVEEDOR, FECHA_ALTA
     """
 
@@ -211,13 +211,14 @@ def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str
     </style>
     </head>
     <body>
-    <p>Buen día,</p>
-    <p>Te comparto el reporte de backorder para su revisión.</p>
+    <p><b>Buen día estimado proveedor espero y se encuentre bien</b></p>
+    <p><b>Anexo al presente un archivo en Excel que contiene todas las líneas abiertas pendientes de entrega (BackOrder), por favor le solicitamos enviar las fechas de entrega de cada una de las partidas en la mayor brevedad posible, sabiendo que las fechas indicadas son de arribo en almacén de FINSA.</b></p>
+    <p><b>Para Finsa y proveedores es importante mantener al cliente final informado sobre la entrega de sus productos</b></p>
+    <p><b>Agradecemos su puntal apoyo</b></p>
+    <p><b>Saludos</b></p>
     <h2>Reporte de Backorder - {Sucursal}</h2>
     {df.to_html(index=False)}
     <br>
-    <p>Favor de revisar el reporte y tomar las acciones necesarias.</p>
-    <p>Comprador encargado: {Comprador}</p>
     <p style="font-size: 11px; color: #777777;">Este es un correo automático generado por el sistema.</p>
     </body>
     </html>
@@ -250,6 +251,7 @@ def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str
     msg["Subject"] = f"Reporte de Backorder - {Proveedor}"
     msg["From"]    = Email_comprador
     msg["To"]      = Email_proveedor #", ".join([r.strip() for r in RECEPTOR.split(",")])
+    msg["Cc"]      = "leonardo.laureles@danuanalitica.com"
     msg['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Python-SMTPLIB"
     msg['X-Mailer'] = "Python-SMTP-Client"
     msg.attach(MIMEText(html, "html"))
