@@ -1,7 +1,5 @@
 # main.py
-
 ## librerías
-
 import os
 import smtplib
 from email.message import EmailMessage
@@ -13,7 +11,6 @@ from email import encoders
 import imaplib
 import time 
 from dotenv import load_dotenv
-
 import pandas as pd
 import re
 import numpy as np
@@ -21,19 +18,18 @@ import ast
 import openpyxl
 from google.cloud import bigquery
 from email_validator import validate_email, EmailNotValidError
-
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
 from openpyxl.utils import get_column_letter
 
-
-EJECUTION_MODE = ""
+EJECUTION_MODE = "PRUEBA"
 
 ## Extrae variables del .env
 load_dotenv()
 PROJECT_ID = os.environ["GCP_PROJECT"]
 BUYERS_PASSWORD = os.environ.get("BUYERS_PASSWORD", "")
 BUYERS_PASSWORD = ast.literal_eval(BUYERS_PASSWORD)
-buyer_passwords = pd.DataFrame(list(BUYERS_PASSWORD.items()), columns=['Usuario_ID', 'Password'])
+buyer_passwords = pd.DataFrame.from_dict(BUYERS_PASSWORD, orient='index', columns=['Email_COMPRADOR', 'Password'])
+buyer_passwords.index.name = 'Usuario_ID'
 GOOGLE_CREDENTIALS = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
 
 client = bigquery.Client(project=PROJECT_ID)
@@ -45,35 +41,30 @@ job_config = bigquery.LoadJobConfig(
     write_disposition="WRITE_APPEND" 
 )
 
-# # query = '''SELECT DISTINCT Proveedor, Nombre,
-# # COALESCE(
-# #   NULLIF(Email1, ''),
-# #   NULLIF(Email2, ''),
-# #   NULLIF(Email3, '')
-# # ) AS Email FROM `finsadashboard.raw_data.Proveedores`
-# # WHERE 
-# # COALESCE(
-# #   NULLIF(Email1, ''),
-# #   NULLIF(Email2, ''),
-# #   NULLIF(Email3, '')
-# # ) LIKE '%@%'  AND Proveedor IN (95)
+# query = '''SELECT DISTINCT Proveedor, Nombre,
+# Email1 AS Email,
+# Email2 AS Email_CC,
+# Comprador
+# FROM `finsadashboard.raw_data.Proveedores`
+# WHERE 
+# COALESCE(
+#   NULLIF(Email1, ''),
+#   NULLIF(Email2, ''),
+#   NULLIF(Email3, '')
+# ) LIKE '%@%'  AND Comprador IS NOT NULL AND  PROVEEDOR IN  (95)
 
-# # --LIMIT 100
-# # '''
+# --LIMIT 100
+# '''
+
 
 # Query de prueba para envío a destinatario fijo
 query = '''SELECT DISTINCT Proveedor, Nombre,
---'leonardo.laureles@danuanalitica.com' AS Email 
---CASE WHEN Proveedor = 10096 THEN 'fmartinez@finsa.com.mx' ELSE 'ruben.garza@finsa.com.mx' END AS Email
-    CASE 
-        WHEN Proveedor = 95 THEN 'keyla.islas@danuanalitica.com'
-        WHEN Proveedor = 3 THEN 'fmartinez@finsa.com.mx'
-        WHEN Proveedor = 56 THEN 'keyla.islas@danuanalitica.com'
-        ELSE 'lucia.balli@danuanalitica.com' 
-    END AS Email
+    Case When Proveedor = 95 Then 'keyla.islas@danuanalitica.com' Else 'daniel.perez@danuanalitica.com' End AS Email,
+    case when Proveedor = 95 then 'daniel.perez@danuanalitica.com' else 'keyla.islas@danuanalitica.com' end AS Email_CC,
+    7.0 AS Comprador
 FROM `finsadashboard.raw_data.Proveedores` 
 --LIMIT 3
-WHERE Proveedor IN (95)
+WHERE Proveedor IN (95,21)
 '''
 
 correos = client.query(query).to_dataframe()
@@ -98,26 +89,26 @@ query = """
             NOMBRE_COMPRADOR,
             NOMBRE_PROVEEDOR,
             PROVEEDOR,
-            1 AS COMPRADOR,
-            "pruebas@finsa.com.mx" AS Email_COMPRADOR,
-            SUCURSAL, PEDIDO
+            COMPRADOR,
+            SUCURSAL, 
+            ALMACEN,
+            PEDIDO
         FROM `finsadashboard.mrts.mrts_backorder_MTY`
         WHERE BACKORDER > 0 
           AND DIAS_RETRASO_EMBARQUE > 0
-          AND  PROVEEDOR IN  (95)
+          AND  PROVEEDOR IN  (95,21)
         ORDER BY NOMBRE_PROVEEDOR, FECHA_ALTA
     """
 
 backorder = client.query(query).to_dataframe()
 
-
-loop_values = backorder[['NOMBRE_COMPRADOR','NOMBRE_PROVEEDOR', 'NOMBRE_SUCURSAL', 'NOMBRE_ALMACEN', 'NOMBRE_COMPRADOR', 'PROVEEDOR', 'COMPRADOR', 'SUCURSAL', 'Email_COMPRADOR']].drop_duplicates()
+loop_values = backorder[['NOMBRE_COMPRADOR','NOMBRE_PROVEEDOR', 'NOMBRE_SUCURSAL', 'NOMBRE_ALMACEN', 'PROVEEDOR', 'COMPRADOR', 'SUCURSAL','ALMACEN']].drop_duplicates()
 loop_values = loop_values.merge(correos, left_on='PROVEEDOR', right_on='Proveedor', how='left')
-loop_values = loop_values.merge(buyer_passwords, left_on='COMPRADOR', right_on='Usuario_ID', how='left')
-loop_values = loop_values[['NOMBRE_PROVEEDOR','NOMBRE_COMPRADOR', 'NOMBRE_SUCURSAL', 'NOMBRE_ALMACEN','Email_COMPRADOR', 'Email', 'Password']]
+loop_values = loop_values.merge(buyer_passwords, left_on='COMPRADOR', right_index=True, how='left')
+loop_values = loop_values[['NOMBRE_PROVEEDOR','NOMBRE_COMPRADOR', 'NOMBRE_SUCURSAL', 'NOMBRE_ALMACEN','PROVEEDOR', 'COMPRADOR', 'SUCURSAL','ALMACEN','Email_COMPRADOR', 'Email','Email_CC', 'Password']]
 
 
-# ─── DEF CORREOS_CLEAN ─────────────────────────────────────────────────────────────────
+##─── DEF CORREOS_CLEAN ─────────────────────────────────────────────────────────────────
 
 def clean_email_addresses(correos: pd.DataFrame) -> pd.DataFrame:
     extraido = correos['Email'].str.extract(r'\[(.*?)\]', expand=False)
@@ -126,17 +117,33 @@ def clean_email_addresses(correos: pd.DataFrame) -> pd.DataFrame:
     correos['Clean'] = (
     extraido
     .fillna(correos['Clean'])
-    .str.replace(r'[\[\]<>]', '', regex=True)  # eliminar caracteres especiales
-    .str.rsplit(' ', n=1).str[-1]              # quedarse con la última palabra
-    .str.rsplit(':', n=1).str[-1]              # eliminar prefijo tipo "mailto:"
+    .str.replace(r'[\[\]<>]', '', regex=True)  
+    .str.rsplit(' ', n=1).str[-1]              
+    .str.rsplit(':', n=1).str[-1]           
 )
     patron = r'([a-zA-Z0-9Ññ._-]+@[a-zA-Z0-9Ññ_-]+(?:\.[a-zA-Z]{2,})+)'    
     correos['Clean'] = correos['Clean'].str.extract(patron)
     correos = correos.dropna(subset=['Clean'])
+
+    extraido = correos['Email_CC'].str.extract(r'\[(.*?)\]', expand=False)
+    correos['Clean_CC'] = extraido.fillna(correos['Email_CC'])
+    extraido = correos['Clean_CC'].str.extract(r'<(.*?)>', expand=False)
+    correos['Clean_CC'] = (
+    extraido
+    .fillna(correos['Clean_CC'])
+    .str.replace(r'[\[\]<>]', '', regex=True)  
+    .str.rsplit(' ', n=1).str[-1]              
+    .str.rsplit(':', n=1).str[-1]           
+)
+    patron = r'([a-zA-Z0-9Ññ._-]+@[a-zA-Z0-9Ññ_-]+(?:\.[a-zA-Z]{2,})+)'    
+    correos['Clean_CC'] = correos['Clean_CC'].str.extract(patron)
+    correos = correos.dropna(subset=['Clean_CC'])
+
+    
     
     return correos
 
-# ─── DEF VALIDAR DOMINIO ─────────────────────────────────────────────────────────────────
+##─── DEF VALIDAR DOMINIO ─────────────────────────────────────────────────────────────────
 def verificar_existencia_correo(correo):
     try:
         validate_email(correo, check_deliverability=True)
@@ -145,12 +152,12 @@ def verificar_existencia_correo(correo):
         return False
 
 
-# ─── DEF DATA ─────────────────────────────────────────────────────────────────
-def get_backorder(provider_name: str, branch_name: str, buyer_name: str, df: pd.DataFrame) -> pd.DataFrame:
+##─── DEF DATA ─────────────────────────────────────────────────────────────────
+def get_backorder(provider: int, branch: int, buyer: float, df: pd.DataFrame) -> pd.DataFrame:
 
-    df = df[(df['NOMBRE_PROVEEDOR'] == provider_name) &
-            (df['NOMBRE_SUCURSAL'] == branch_name) &
-            (df['NOMBRE_COMPRADOR'] == buyer_name)]
+    df = df[(df['PROVEEDOR'] == provider) &
+            (df['SUCURSAL'] == branch) &
+            (df['COMPRADOR'] == buyer)]
     df = df[['FECHA_ALTA','ORDEN_COMPRA','PEDIDO','ARTICULO','DESCRIPCION','EDP','PARTIDA','CANTIDAD','CANTIDAD_RECIBIDA','BACKORDER','UNIDAD','FECHA_EMBARQUE','DIAS_RETRASO_EMBARQUE']]
     df.columns = ['FECHA ALTA','ORDEN DE COMPRA','PEDIDO','ARTICULO','DESCRIPCIÓN','EDP','PARTIDA','CANTIDAD','CANTIDAD RECIBIDA','BACKORDER','UNIDAD','FECHA DE EMBARQUE','DIAS DE RETRASOEMBARQUE']
     return df
@@ -158,15 +165,12 @@ def get_backorder(provider_name: str, branch_name: str, buyer_name: str, df: pd.
 def limpiar_cadena(cadena: str) -> str:
     if pd.isna(cadena):
         return ""
-    # Eliminar caracteres especiales y acentos
+    ##Eliminar caracteres especiales y acentos
     cadena = re.sub(r'[^a-zA-Z0-9]', '', cadena)
     return cadena.strip()
 
-# ─── CORREO ───────────────────────────────────────────────────────────────────
-def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str, Email_comprador: str, Comprador: str,  Sucursal: str, Password: str, Almacen: str) -> None:
-    """
-    Sends the backorder DataFrame as a styled HTML table via email.
-    """
+##─── CORREO ───────────────────────────────────────────────────────────────────
+def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str, Email_comprador: str, Comprador: str,  Sucursal: str, Password: str, Almacen: str, Email_CC: str) -> None:
     if df.empty:
         print("El reporte está vacío, no se envía correo.")
         return
@@ -251,16 +255,16 @@ def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str
     msg["Subject"] = f"Reporte de Backorder - {Proveedor}"
     msg["From"]    = Email_comprador
     msg["To"]      = Email_proveedor #", ".join([r.strip() for r in RECEPTOR.split(",")])
-    msg["Cc"]      = "leonardo.laureles@danuanalitica.com"
+
+    if Email_CC:
+        CCs = Email_comprador + "," + Email_CC
+    else:
+        CCs = Email_comprador
+
+    msg["Cc"]      = CCs ## "ruben.garza@finsa.com.mx" + "," +
     msg['User-Agent'] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Python-SMTPLIB"
     msg['X-Mailer'] = "Python-SMTP-Client"
     msg.attach(MIMEText(html, "html"))
-    # with open(excel_file, "rb") as f:
-    #     part = MIMEApplication(f.read(), Name=excel_file)
-    # part['Content-Disposition'] = f'attachment; filename={excel_file}'
-    # msg.attach(part)
-
-
 
     try:
         with open(excel_file, "rb") as f:
@@ -279,10 +283,6 @@ def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str
     except FileNotFoundError:
         print(f"❌ Error: No se encontró el archivo {excel_file}")
         return
-
-
-
-
 
     if not Email_comprador or not Password:
         print("⚠️ Advertencia: Email_comprador o Password no están configurados en el archivo .env. No se puede enviar el correo.")
@@ -340,20 +340,24 @@ def send_email_backorder(df: pd.DataFrame, Proveedor : str, Email_proveedor: str
 
 if __name__ == "__main__":
     try:
-      loop_values = clean_email_addresses(loop_values)
-      resultados = loop_values['Email'].apply(verificar_existencia_correo)
-      loop_values['es_valido'] = resultados
-      loop_values = loop_values[loop_values['es_valido'] == True]
-      print(loop_values)
+        loop_values = clean_email_addresses(loop_values)
+        resultados = loop_values['Clean'].apply(verificar_existencia_correo)
+        loop_values['es_valido'] = resultados
+        resultados = loop_values['Clean_CC'].apply(verificar_existencia_correo)
+        loop_values['es_valido_CC'] = resultados
+        loop_values = loop_values[loop_values['es_valido'] == True]
+        loop_values['Clean_CC'] = np.where(~loop_values['es_valido_CC'], loop_values['Clean_CC'], None)
+        for columna, valor in loop_values.iloc[0].items():
+                    print(f"{columna}: {valor}")
+      
 
-      for row in loop_values.itertuples():
-        print(row.NOMBRE_PROVEEDOR, row.Email)
-        print("Obteniendo datos de backorder",row.NOMBRE_PROVEEDOR)
-        df = get_backorder(row.NOMBRE_PROVEEDOR, row.NOMBRE_SUCURSAL, row.NOMBRE_COMPRADOR, backorder)
-        print(df)
-        
-        print("\nEnviando reporte por correo...")
-        send_email_backorder(df, row.NOMBRE_PROVEEDOR, row.Email, row.Email_COMPRADOR, row.NOMBRE_COMPRADOR, row.NOMBRE_SUCURSAL, row.Password, row.NOMBRE_ALMACEN)
+        for row in loop_values.itertuples():
+            print(row.NOMBRE_PROVEEDOR, row.Email)
+            print("Obteniendo datos de backorder",row.NOMBRE_PROVEEDOR)
+            df = get_backorder(row.PROVEEDOR, row.SUCURSAL, row.COMPRADOR, backorder)
+            print(df)
+            print("\nEnviando reporte por correo...")
+            send_email_backorder(df, row.NOMBRE_PROVEEDOR, row.Email, row.Email_COMPRADOR, row.NOMBRE_COMPRADOR, row.NOMBRE_SUCURSAL, row.Password, row.NOMBRE_ALMACEN, row.Email_CC)
 
     except Exception as e:
         print("Ocurrió un error al consultar BigQuery:", e)
