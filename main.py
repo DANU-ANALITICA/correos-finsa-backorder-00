@@ -77,36 +77,38 @@ correos = client.query(query).to_dataframe()
 
 query = """
         SELECT 
-            EDP,
-            FOLIO AS ORDEN_COMPRA,
-            PARTIDA,
-            FECHA_ALTA,
-            ARTICULO,
-            DESCRIPCION,
-            CANTIDAD,
-            CANTIDAD_RECIBIDA,
-            BACKORDER,
-            UNIDAD,
-            COSTO,
-            FECHA_EMBARQUE,
-            DIAS_RETRASO_EMBARQUE,
-            NOMBRE_SUCURSAL,
-            NOMBRE_ALMACEN,
-            NOMBRE_COMPRADOR,
-            NOMBRE_PROVEEDOR,
-            PROVEEDOR,
-            COMPRADOR,
-            SUCURSAL, 
-            ALMACEN,
-            PEDIDO
-        FROM `finsadashboard.mrts.mrts_backorder_MTY`
-        WHERE BACKORDER > 0 
-          AND DIAS_RETRASO_EMBARQUE > 0
-          AND  PROVEEDOR IN  (95,21)
+            bo.EDP,
+            bo.FOLIO AS ORDEN_COMPRA,
+            bo.PARTIDA,
+            bo.FECHA_ALTA,
+            bo.ARTICULO,
+            bo.DESCRIPCION,
+            bo.CANTIDAD,
+            bo.CANTIDAD_RECIBIDA,
+            bo.BACKORDER,
+            bo.UNIDAD,
+            bo.COSTO,
+            bo.FECHA_EMBARQUE,
+            bo.DIAS_RETRASO_EMBARQUE,
+            bo.NOMBRE_SUCURSAL,
+            bo.NOMBRE_ALMACEN,
+            bo.NOMBRE_COMPRADOR,
+            bo.NOMBRE_PROVEEDOR,
+            bo.PROVEEDOR,
+            bo.COMPRADOR,
+            bo.SUCURSAL, 
+            bo.ALMACEN,
+            bo.PEDIDO,
+            --check.Envio_Backorder AS Envio_Backorder
+        FROM `finsadashboard.mrts.mrts_backorder_MTY` bo
+        LEFT JOIN `finsadashboard.mrts.checkbox_state_proveedores` AS check
+        ON CONCAT(bo.PROVEEDOR, '|', bo.SUCURSAL) = check.ID
+        where Envio_Backorder = True
         ORDER BY NOMBRE_PROVEEDOR, FECHA_ALTA
     """
 
 backorder = client.query(query).to_dataframe()
+print(backorder)
 
 loop_values = backorder[['NOMBRE_COMPRADOR','NOMBRE_PROVEEDOR', 'NOMBRE_SUCURSAL', 'NOMBRE_ALMACEN', 'PROVEEDOR', 'COMPRADOR', 'SUCURSAL','ALMACEN']].drop_duplicates()
 loop_values = loop_values.merge(correos, left_on='PROVEEDOR', right_on='Proveedor', how='left')
@@ -145,7 +147,19 @@ loop_values = loop_values[['NOMBRE_PROVEEDOR','NOMBRE_COMPRADOR', 'NOMBRE_SUCURS
 #     correos['Clean_CC'] = correos['Clean_CC'].str.extract(patron)
 #     correos = correos.dropna(subset=['Clean_CC'])
 
-    
+#     extraido = correos['Email_COMPRADOR'].str.extract(r'\[(.*?)\]', expand=False)
+#     correos['Clean_COMPRADOR'] = extraido.fillna(correos['Email_COMPRADOR'])
+#     extraido = correos['Clean_COMPRADOR'].str.extract(r'<(.*?)>', expand=False)
+#     correos['Clean_COMPRADOR'] = (
+#     extraido
+#     .fillna(correos['Clean_COMPRADOR'])
+#     .str.replace(r'[\[\]<>]', '', regex=True)  
+#     .str.rsplit(' ', n=1).str[-1]              
+#     .str.rsplit(':', n=1).str[-1]           
+# )
+#     patron = r'([a-zA-Z0-9Ññ._-]+@[a-zA-Z0-9Ññ_-]+(?:\.[a-zA-Z]{2,})+)'    
+#     correos['Clean_COMPRADOR'] = correos['Clean_COMPRADOR'].str.extract(patron)
+#     correos = correos.dropna(subset=['Clean_COMPRADOR'])
     
 #     return correos
 
@@ -296,50 +310,50 @@ loop_values = loop_values[['NOMBRE_PROVEEDOR','NOMBRE_COMPRADOR', 'NOMBRE_SUCURS
     
 #     HOST =  "finsa--com--mx.criticalmail.net" #"smtp.gmail.com" #
 
-#     try:
-#         with smtplib.SMTP_SSL(HOST, 465, timeout=30) as smtp:
-#             time.sleep(1)
-#             smtp.login(Email_comprador, Password)
-#             smtp.send_message(msg)
-#             print("✅ Correo enviado")
+#     # try:
+#     #     with smtplib.SMTP_SSL(HOST, 465, timeout=30) as smtp:
+#     #         time.sleep(1)
+#     #         smtp.login(Email_comprador, Password)
+#     #         smtp.send_message(msg)
+#     #         print("✅ Correo enviado")
 
-#             if EJECUTION_MODE != "PRUEBA":
+#     #         if EJECUTION_MODE != "PRUEBA":
 
-#                 try:
-#                     print(f"Subiendo datos a {TABLA_COMPLETA_ID}...")
-#                     df = df.copy()
-#                     df['FECHA_ENVIO'] = pd.Timestamp.now()
-#                     df['Email_proveedor'] = Email_proveedor
-#                     df['Email_comprador'] = Email_comprador
-#                     df['Comprador'] = Comprador
-#                     df['Sucursal'] = Sucursal
-#                     df['Proveedor'] = Proveedor
-#                     df['Almacen'] = Almacen   
-#                     job = client.load_table_from_dataframe(df, TABLA_COMPLETA_ID, job_config=job_config)
-#                     job.result()
+#     #             try:
+#     #                 print(f"Subiendo datos a {TABLA_COMPLETA_ID}...")
+#     #                 df = df.copy()
+#     #                 df['FECHA_ENVIO'] = pd.Timestamp.now()
+#     #                 df['Email_proveedor'] = Email_proveedor
+#     #                 df['Email_comprador'] = Email_comprador
+#     #                 df['Comprador'] = Comprador
+#     #                 df['Sucursal'] = Sucursal
+#     #                 df['Proveedor'] = Proveedor
+#     #                 df['Almacen'] = Almacen   
+#     #                 job = client.load_table_from_dataframe(df, TABLA_COMPLETA_ID, job_config=job_config)
+#     #                 job.result()
                         
-#                     print(f"¡Tabla subida exitosamente! Se cargaron {job.output_rows} filas.")
+#     #                 print(f"¡Tabla subida exitosamente! Se cargaron {job.output_rows} filas.")
 
-#                 except Exception as e:
-#                     print(f"Error al subir los datos a BigQuery: {e}")
+#     #             except Exception as e:
+#     #                 print(f"Error al subir los datos a BigQuery: {e}")
         
-#     except Exception as e:
-#         print("❌ Error al enviar el correo:", e)
+#     # except Exception as e:
+#     #     print("❌ Error al enviar el correo:", e)
 
-#     try:
-#         with imaplib.IMAP4_SSL(HOST, 993, timeout=30) as imap:
-#             imap.login(Email_comprador, Password)
-#             carpeta_enviados = "Sent" 
+#     # try:
+#     #     with imaplib.IMAP4_SSL(HOST, 993, timeout=30) as imap:
+#     #         imap.login(Email_comprador, Password)
+#     #         carpeta_enviados = "Sent" 
             
-#             imap.append(
-#                 carpeta_enviados, 
-#                 r'\Seen', 
-#                 imaplib.Time2Internaldate(time.time()), 
-#                 msg.as_bytes()
-#             )
-#             print("Copia guardada con éxito en la carpeta de Enviados (IMAP).")
-#     except Exception as e:
-#         print(f"No se pudo guardar la copia en Enviados: {e}")
+#     #         imap.append(
+#     #             carpeta_enviados, 
+#     #             r'\Seen', 
+#     #             imaplib.Time2Internaldate(time.time()), 
+#     #             msg.as_bytes()
+#     #         )
+#     #         print("Copia guardada con éxito en la carpeta de Enviados (IMAP).")
+#     # except Exception as e:
+#     #     print(f"No se pudo guardar la copia en Enviados: {e}")
         
 
 # ## PROVEEDOR X PROVEEDOR
@@ -351,19 +365,22 @@ loop_values = loop_values[['NOMBRE_PROVEEDOR','NOMBRE_COMPRADOR', 'NOMBRE_SUCURS
 #         loop_values['es_valido'] = resultados
 #         resultados = loop_values['Clean_CC'].apply(verificar_existencia_correo)
 #         loop_values['es_valido_CC'] = resultados
+#         resultados = loop_values['Clean_COMPRADOR'].apply(verificar_existencia_correo)
+#         loop_values['es_valido_COMPRADOR'] = resultados
 #         loop_values = loop_values[loop_values['es_valido'] == True]
+#         loop_values = loop_values[loop_values['es_valido_COMPRADOR'] == True]
 #         loop_values['Clean_CC'] = np.where(~loop_values['es_valido_CC'], loop_values['Clean_CC'], None)
-#         for columna, valor in loop_values.iloc[0].items():
-#                     print(f"{columna}: {valor}")
+
+#         loop_values.to_excel("nombre_archivo.xlsx", index=False)
       
 
-#         for row in loop_values.itertuples():
-#             print(row.NOMBRE_PROVEEDOR, row.Email)
-#             print("Obteniendo datos de backorder",row.NOMBRE_PROVEEDOR)
-#             df = get_backorder(row.PROVEEDOR, row.SUCURSAL, row.COMPRADOR, backorder)
-#             print(df)
-#             print("\nEnviando reporte por correo...")
-#             #send_email_backorder(df, row.NOMBRE_PROVEEDOR, row.Email, row.Email_COMPRADOR, row.NOMBRE_COMPRADOR, row.NOMBRE_SUCURSAL, row.Password, row.NOMBRE_ALMACEN, row.Email_CC)
+#         # for row in loop_values.itertuples():
+#         #     print(row.NOMBRE_PROVEEDOR, row.Email)
+#         #     print("Obteniendo datos de backorder",row.NOMBRE_PROVEEDOR)
+#         #     df = get_backorder(row.PROVEEDOR, row.SUCURSAL, row.COMPRADOR, backorder)
+#         #     print(df)
+#         #     print("\nEnviando reporte por correo...")
+#         #     send_email_backorder(df, row.NOMBRE_PROVEEDOR, row.Email, row.Email_COMPRADOR, row.NOMBRE_COMPRADOR, row.NOMBRE_SUCURSAL, row.Password, row.NOMBRE_ALMACEN, row.Email_CC)
 
 #     except Exception as e:
 #         print("Ocurrió un error al consultar BigQuery:", e)
