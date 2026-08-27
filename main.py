@@ -2,10 +2,8 @@
 ## librerías
 import os
 import smtplib
-from email.message import EmailMessage
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
 from email.mime.base import MIMEBase
 from email import encoders
 import imaplib
@@ -15,10 +13,9 @@ import pandas as pd
 import re
 import numpy as np
 import ast
-import openpyxl
 from google.cloud import bigquery
 from email_validator import validate_email, EmailNotValidError
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
+from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
 EJECUTION_MODE = "PRUEBA"
@@ -28,7 +25,7 @@ load_dotenv()
 PROJECT_ID = os.environ["GCP_PROJECT"]
 BUYERS_PASSWORD = os.environ.get("BUYERS_PASSWORD", "")
 BUYERS_PASSWORD = ast.literal_eval(BUYERS_PASSWORD)
-buyer_passwords = pd.DataFrame.from_dict(BUYERS_PASSWORD, orient='index', columns=['Email_COMPRADOR', 'Password'])
+buyer_passwords = pd.DataFrame.from_dict(BUYERS_PASSWORD, orient='index', columns=['Password'])
 buyer_passwords.index.name = 'Usuario_ID'
 GOOGLE_CREDENTIALS = os.environ["GOOGLE_APPLICATION_CREDENTIALS"]
 
