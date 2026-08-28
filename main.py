@@ -17,6 +17,7 @@ from google.cloud import bigquery
 from email_validator import validate_email, EmailNotValidError
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
+from datetime import datetime
 
 EJECUTION_MODE = "PRUEBA"
 
@@ -99,7 +100,7 @@ query = """
             bo.SUCURSAL, 
             bo.ALMACEN,
             bo.PEDIDO,
-            --check.Envio_Backorder AS Envio_Backorder
+            check.Dias_Envio AS Dias_Envio
         FROM `finsadashboard.mrts.mrts_backorder_MTY` bo
         LEFT JOIN `finsadashboard.mrts.checkbox_state_proveedores` AS check
         ON CONCAT(bo.PROVEEDOR, '|', bo.SUCURSAL) = check.ID
@@ -108,12 +109,11 @@ query = """
     """
 
 backorder = client.query(query).to_dataframe()
-print(backorder)
 
-loop_values = backorder[['NOMBRE_COMPRADOR','NOMBRE_PROVEEDOR', 'NOMBRE_SUCURSAL', 'NOMBRE_ALMACEN', 'PROVEEDOR', 'COMPRADOR', 'SUCURSAL','ALMACEN']].drop_duplicates()
+loop_values = backorder[['NOMBRE_COMPRADOR','NOMBRE_PROVEEDOR', 'NOMBRE_SUCURSAL', 'NOMBRE_ALMACEN', 'PROVEEDOR', 'COMPRADOR', 'SUCURSAL','ALMACEN','Dias_Envio']].drop_duplicates()
 loop_values = loop_values.merge(correos, left_on='PROVEEDOR', right_on='Proveedor', how='left')
 loop_values = loop_values.merge(buyer_passwords, left_on='COMPRADOR', right_index=True, how='left')
-loop_values = loop_values[['NOMBRE_PROVEEDOR','NOMBRE_COMPRADOR', 'NOMBRE_SUCURSAL', 'NOMBRE_ALMACEN','PROVEEDOR', 'COMPRADOR', 'SUCURSAL','ALMACEN','Email_COMPRADOR', 'Email','Email_CC', 'Password']]
+loop_values = loop_values[['NOMBRE_PROVEEDOR','NOMBRE_COMPRADOR', 'NOMBRE_SUCURSAL', 'NOMBRE_ALMACEN','PROVEEDOR', 'COMPRADOR', 'SUCURSAL','ALMACEN','Email_COMPRADOR', 'Email','Email_CC', 'Password','Dias_Envio']]
 
 
 ##─── DEF CORREOS_CLEAN ─────────────────────────────────────────────────────────────────
@@ -372,15 +372,17 @@ if __name__ == "__main__":
         loop_values['Clean_CC'] = np.where(~loop_values['es_valido_CC'], loop_values['Clean_CC'], None)
 
         loop_values.to_excel("nombre_archivo.xlsx", index=False)
-      
 
+        dias = ["Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabado", "Domingo"]
+      
         for row in loop_values.itertuples():
-            print(row.NOMBRE_PROVEEDOR, row.Email)
-            print("Obteniendo datos de backorder",row.NOMBRE_PROVEEDOR)
-            df = get_backorder(row.PROVEEDOR, row.SUCURSAL, row.COMPRADOR, backorder)
-            print(df)
-            print("\nEnviando reporte por correo...")
-            send_email_backorder(df, row.NOMBRE_PROVEEDOR, row.Email, row.Email_COMPRADOR, row.NOMBRE_COMPRADOR, row.NOMBRE_SUCURSAL, row.Password, row.NOMBRE_ALMACEN, row.Email_CC)
+            if dias[datetime.now().isoweekday()-1] in row.Dias_Envio:
+                print(row.NOMBRE_PROVEEDOR, row.Email)
+                print("Obteniendo datos de backorder",row.NOMBRE_PROVEEDOR)
+                df = get_backorder(row.PROVEEDOR, row.SUCURSAL, row.COMPRADOR, backorder)
+                print(df)
+                print("\nEnviando reporte por correo...")
+                send_email_backorder(df, row.NOMBRE_PROVEEDOR, row.Email, row.Email_COMPRADOR, row.NOMBRE_COMPRADOR, row.NOMBRE_SUCURSAL, row.Password, row.NOMBRE_ALMACEN, row.Email_CC)
 
     except Exception as e:
         print("Ocurrió un error al consultar BigQuery:", e)
