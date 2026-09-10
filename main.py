@@ -52,11 +52,7 @@ ON p.Comprador = c.Comprador
 LEFT JOIN `finsadashboard.raw_data.Usuarios` as u
 ON c.Usuario = u.Usuario
 WHERE 
-COALESCE(
-  NULLIF(p.Email1, ''),
-  NULLIF(p.Email2, ''),
-  NULLIF(p.Email3, '')
-) LIKE '%@%'  
+  NULLIF(p.Email1, '') LIKE '%@%'  
 AND p.Comprador IS NOT NULL 
 AND p.Proveedor IN  (Select DISTINCT Proveedor from `finsadashboard.mrts.mrts_backorder_MTY`)
 AND NULLIF(u.email, '') LIKE '%@%'  
